@@ -78,13 +78,13 @@ module Network.Pcap
 
     -- * Packet processing
     , dispatch                  -- :: PcapHandle -> Int -> Callback -> IO Int
-    , loop                      -- :: PcapHandle -> Int -> Callback -> IO Int
+    , loop                      -- :: PcapHandle -> Int -> Callback -> IO ()
     , next                      -- :: PcapHandle -> IO (PktHdr, Ptr Word8)
     , dump                      -- :: DumpHandle -> Callback
 
     -- ** 'B.ByteString' variants
     , dispatchBS                -- :: PcapHandle -> Int -> CallbackBS -> IO Int
-    , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO Int
+    , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO ()
     , nextBS                    -- :: PcapHandle -> IO (PktHdr, B.ByteStringa)
     , dumpBS                    -- :: DumpHandle -> CallbackBS
 
@@ -265,7 +265,7 @@ wrapBS f hdr ptr = do
 -- | Collect and process packets.
 --
 -- The count is the maximum number of packets to process before
--- returning.  A count of -1 means process all of the packets received
+-- returning.  A count of 0 or -1 means process all of the packets received
 -- in one buffer (if a live capture) or all of the packets in a dump
 -- file (if offline).
 --
@@ -274,7 +274,6 @@ wrapBS f hdr ptr = do
 -- record contains the number of bytes captured, which can be used to
 -- marshal the data into a list, array, or 'B.ByteString' (using
 -- 'toBS').
---
 dispatch :: PcapHandle
          -> Int                 -- ^ number of packets to process
          -> Callback            -- ^ packet processing function
@@ -289,23 +288,29 @@ dispatchBS :: PcapHandle
 dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 
 -- | Similar to 'dispatch', but loop until the number of packets
--- specified by the second argument are read. A negative value loops
--- forever.
+-- specified by the second argument are read. A count of 0 or -1 means
+-- loop forever.
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
 loop :: PcapHandle
-     -> Int                     -- ^ number of packets to read (-1 == loop forever)
+     -> Int                     -- ^ number of packets to read (-1 and 0 mean loop forever)
      -> Callback                -- ^ packet processing function
-     -> IO Int                  -- ^ number of packets read
-loop pch count f = withPcap pch $ \hdl -> P.loop hdl count f
+     -> IO ()
+loop pch count f = do
+    -- This return code is always zero for our current API. See
+    -- 'P.loop'.
+    _ <- withPcap pch $ \hdl -> P.loop hdl count f
+    return ()
 
 -- | Variant of 'loop' for use with 'B.ByteString'.
 loopBS :: PcapHandle
-       -> Int                   -- ^ number of packets to read (-1 == loop forever)
+       -> Int                   -- ^ number of packets to read (-1 and 0 mean loop forever)
        -> CallbackBS            -- ^ packet processing function
-       -> IO Int                -- ^ number of packets read
-loopBS pch count f = withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
+       -> IO ()
+loopBS pch count f = do
+    _ <- withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
+    return ()
 
 -- | Send a raw packet through the network interface.
 sendPacket :: PcapHandle

@@ -612,10 +612,15 @@ dispatch hdl count f = do
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
+--
+-- This function can in theory return -2 if terminated by
+-- @pcap_breakloop@ before any packets were processed. However, we
+-- don't expose the breakloop API, so this function should always
+-- return 0, since we die on errors.
 loop :: Ptr PcapTag -- ^ packet capture descriptor
      -> Int         -- ^ number of packet to read
      -> Callback    -- ^ packet processing function
-     -> IO Int      -- ^ number of packets read
+     -> IO Int      -- ^ zero on success
 loop hdl count f = do
     handler <- exportCallback f
     result  <- pcap_loop hdl (fromIntegral count) handler nullPtr
