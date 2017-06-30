@@ -80,13 +80,13 @@ module Network.Pcap
     , dispatch                  -- :: PcapHandle -> Int -> Callback -> IO Int
     , loop                      -- :: PcapHandle -> Int -> Callback -> IO Int
     , next                      -- :: PcapHandle -> IO (PktHdr, Ptr Word8)
-    , dump                      -- :: Ptr PcapDumpTag -> Ptr PktHdr -> Ptr Word8 -> IO ()
+    , dump                      -- :: DumpHandle -> Callback
 
     -- ** 'B.ByteString' variants
     , dispatchBS                -- :: PcapHandle -> Int -> CallbackBS -> IO Int
     , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO Int
     , nextBS                    -- :: PcapHandle -> IO (PktHdr, B.ByteStringa)
-    , dumpBS                    -- :: Ptr PcapDumpTag -> Ptr PktHdr -> B.ByteString -> IO ()
+    , dumpBS                    -- :: DumpHandle -> CallbackBS
 
     -- * Sending packets
     , sendPacket
@@ -114,6 +114,7 @@ import qualified Data.ByteString.Unsafe as BU
 import Data.Int (Int64)
 import Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 import Data.Word (Word8, Word32)
+import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import qualified Network.Pcap.Base as P
@@ -340,19 +341,14 @@ nextBS pch = withPcap pch P.next >>= toBS
 -- | Write the packet data given by the second and third arguments to
 -- a dump file opened by 'openDead'. 'dump' is designed so it can be
 -- easily used as a default callback function by 'dispatch' or 'loop'.
-dump :: DumpHandle
-     -> Ptr PktHdr              -- ^ packet header record
-     -> Ptr Word8               -- ^ packet data
-     -> IO ()
-dump dh hdr pkt = withDump dh $ \hdl -> P.dump hdl hdr pkt
+dump :: DumpHandle -> Callback
+dump dh hdr pkt =
+    withDump dh $ \hdl -> with hdr $ \ptr -> P.dump hdl ptr pkt
 
-dumpBS :: DumpHandle
-       -> Ptr PktHdr            -- ^ packet header record
-       -> B.ByteString          -- ^ packet data
-       -> IO ()
+dumpBS :: DumpHandle -> CallbackBS
 dumpBS dh hdr s =
-    withDump dh $ \hdl ->
-        BU.unsafeUseAsCString s $ P.dump hdl hdr . castPtr
+    withDump dh $ \hdl -> with hdr $ \ptr ->
+        BU.unsafeUseAsCString s $ P.dump hdl ptr . castPtr
 
 --
 -- Datalink manipulation
