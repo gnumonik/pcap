@@ -100,9 +100,6 @@ module Network.Pcap.Base
     -- * Sending packets
     , sendPacket
 
-    -- * Conversion
-    , toPktHdr
-
     -- * Miscellaneous
     , statistics                -- :: Ptr PcapTag -> IO Statistics
     , version                   -- :: Ptr PcapTag -> IO (Int, Int)
@@ -147,6 +144,10 @@ newtype PcapDumpTag = PcapDumpTag ()
 -- | Dump file descriptor.
 type Pdump = ForeignPtr PcapDumpTag
 
+-- | Packet header.
+--
+-- There is a @'Storeable' 'PktHdr'@ instance for converting between
+-- @'Ptr' PktHdr@ and @PktHdr@.
 data PktHdr = PktHdr {
       hdrSeconds :: {-# UNPACK #-} !Word32       -- ^ timestamp (seconds)
     , hdrUseconds :: {-# UNPACK #-} !Word32      -- ^ timestamp (microseconds)
@@ -535,6 +536,7 @@ foreign import ccall unsafe pcap_sendpacket
 type Callback  = PktHdr    -> Ptr Word8  -> IO ()
 type CCallback = Ptr Word8 -> Ptr PktHdr -> Ptr Word8 -> IO ()
 
+-- | Read, i.e. 'peek', a 'PktHdr' pointer.
 toPktHdr :: Ptr PktHdr -> IO PktHdr
 toPktHdr hdr = do
     let ts = (#ptr struct pcap_pkthdr, ts) hdr
@@ -549,6 +551,30 @@ toPktHdr hdr = do
                   , hdrCaptureLength = fromIntegral (caplen :: CUInt)
                   , hdrWireLength = fromIntegral (len :: CUInt)
                   }
+
+-- | Write, i.e. 'poke' a 'PktHdr' pointer.
+fromPktHdr :: Ptr PktHdr -> PktHdr -> IO ()
+fromPktHdr ptr hdr = do
+    let PktHdr s us caplen len = hdr
+    let ts = (#ptr struct pcap_pkthdr, ts) ptr
+
+    (#poke struct timeval, tv_sec) ts (fromIntegral s :: CLong)
+    (#poke struct timeval, tv_usec) ts (fromIntegral us :: CLong)
+    (#poke struct pcap_pkthdr, caplen) ptr (fromIntegral caplen :: CUInt)
+    (#poke struct pcap_pkthdr, len) ptr (fromIntegral len :: CUInt)
+
+-- GHC versions before 8 don't include the @#alignment@ operator.
+--
+-- https://wiki.haskell.org/FFI_cook_book#Working_with_structs
+#if __GLASGOW_HASKELL__ < 800
+#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
+#endif
+
+instance Storable PktHdr where
+    alignment _ = (#alignment struct pcap_pkthdr)
+    sizeOf _ = (#size struct pcap_pkthdr)
+    peek = toPktHdr
+    poke = fromPktHdr
 
 exportCallback :: Callback -> IO (FunPtr CCallback)
 exportCallback f = exportCCallback $ \_user chdr ptr -> do
