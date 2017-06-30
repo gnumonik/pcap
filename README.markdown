@@ -22,6 +22,15 @@ related files first. For example:
     cabal install
 
 
+# Examples
+
+See `examples/example.hs` for an example of live capturing, dumping
+captured packets, and reading dumped captures from disk. You can build
+this example by enabling the `build-the-examples` flag. For example:
+
+    cabal install -f build-the-examples
+
+
 # Get involved!
 
 Please report bugs via the

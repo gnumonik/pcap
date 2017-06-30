@@ -9,12 +9,20 @@ author:          Bryan O'Sullivan, Nick Burlett, Dominic Steinitz, Gregory Wrigh
 homepage:        https://github.com/bos/pcap
 bug-reports:     https://github.com/bos/pcap/issues
 category:        Network
-cabal-version:   >= 1.6
+cabal-version:   >= 1.8
 extra-source-files:
                  configure.ac configure include/pcapconfig.h.in
-                 pcap.buildinfo.in README.markdown
+                 pcap.buildinfo.in README.markdown CHANGELOG.md
+                 examples/example.hs
 extra-tmp-files: config.log config.status
 build-type:      Configure
+
+-- Don't build the examples by default, so that people don't end up
+-- with the 'pcap-example' executable on their path unless they ask
+-- for it.
+flag build-the-examples
+  default: False
+  manual: True
 
 library
   build-depends: base < 5, bytestring >= 0.9, network, time
