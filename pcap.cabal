@@ -1,5 +1,5 @@
 name:            pcap
-version:         0.4.5.2
+version:         0.5
 license:         BSD3
 license-file:    LICENSE
 synopsis:        A system-independent interface for user-level packet capture
@@ -45,3 +45,11 @@ source-repository head
 source-repository head
   type:     mercurial
   location: https://bitbucket.org/bos/pcap
+
+executable pcap-example
+  if !flag(build-the-examples)
+    buildable: False
+  hs-source-dirs: examples
+  main-is: example.hs
+  build-depends: base, pcap, bytestring
+  ghc-options: -Wall

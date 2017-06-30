@@ -1,4 +1,4 @@
-AC_INIT([Pcap],[0.4.5.1],[bos@serpentine.com], [pcap])
+AC_INIT([Pcap],[0.5],[bos@serpentine.com], [pcap])
 
 AC_ARG_WITH(compiler,
   [AS_HELP_STRING([--with-compiler],
