@@ -9,12 +9,12 @@ usage :: String -> IO ()
 usage errMsg = error $ unlines
     [ errMsg
     , ""
-    , "usage: pcap-exampe (live NUM IFACE | file NUM FILE | dump NUM IFACE FILE)"
+    , "usage: pcap-exampe (live NUM IFACE | read NUM FILE | dump NUM IFACE FILE)"
     , ""
     , "* live NUM IFACE: live capture NUM packets on IFACE and summarize"
     , "  the packets."
     , ""
-    , "* file NUM FILE: read (up to) NUM captured from FILE and summarize"
+    , "* read NUM FILE: read (up to) NUM captured from FILE and summarize"
     , "  the packets."
     , ""
     , "* dump NUM IFACE FILE: live capture NUM packets on IFACE and save"
@@ -77,4 +77,5 @@ printIt ph bytep = do
     -- We could of course use the 'P.loopBS' interface instead, to
     -- avoid doing our own bytestring conversion here.
     bytes <- peekArray (fromIntegral (P.hdrCaptureLength ph)) bytep
+    print ph
     print $ BS.pack bytes
