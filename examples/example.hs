@@ -1,5 +1,6 @@
 module Main where
 
+import qualified Control.Concurrent.Async as C
 import qualified Data.ByteString as BS
 import           Foreign
 import qualified Network.Pcap as P
@@ -59,7 +60,13 @@ dump :: Int -> [String] -> IO ()
 dump numPktsToRead [iface, file] = do
     ph <- P.openLive iface 100 False 10000
     dh <- P.openDump ph file
-    capture ph numPktsToRead (P.dump dh)
+    -- Running the capture in a different thread (and compiling with
+    -- @-threaded@!) allows the program to be interrupted by
+    -- Ctrl-C.
+    C.async (capture ph numPktsToRead (P.dump dh)) >>= C.wait
+    -- However, while the above works, this does not:
+    -- > C.withAsync (capture ph numPktsToRead (P.dump dh)) C.wait
+    -- ???
 dump _ _ = usage "dump: wrong number of args!"
 
 -- | Capture and process packets using the given callback.

@@ -121,6 +121,7 @@ import Foreign.C.String (CString, peekCString, withCString)
 import Foreign.C.Types (CInt(..), CUInt, CChar, CUChar, CLong)
 import Foreign.Concurrent (newForeignPtr)
 import Foreign.ForeignPtr (ForeignPtr)
+import qualified Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca, allocaBytes, free)
 import Foreign.Marshal.Array (allocaArray, peekArray)
 import Foreign.Marshal.Utils (fromBool, toBool)
@@ -279,12 +280,24 @@ openDump :: Ptr PcapTag -- ^ packet capture descriptor
 openDump hdl name =
     withCString name $ \namePtr -> do
       ptr <- pcap_dump_open hdl namePtr >>= throwPcapIf hdl (== nullPtr)
-      newForeignPtr ptr (pcap_dump_close ptr)
+      -- Using 'Foreign.Concurrent.newForeignPtr' isn't sufficient
+      -- here, since its (Haskell) finalizer is not guaranteed to
+      -- run. Rather, we use 'Foreign.ForeignPtr.newForeignPtr', since
+      -- its (C) finalizer is guaranteed to run. Previously, when
+      -- using 'Foreign.Concurrent.newForeignPtr' and killing the
+      -- program with Ctrl-C, we sometimes got corrupted dump files.
+      --
+      -- Perhaps we should also change other finalizers -- 'openDead',
+      -- 'openLive', 'openOffline', 'compileFilter' -- to use
+      -- 'Foreign.ForeignPtr.newForeignPtr'? But handling the "whole
+      -- program terminated unexpectedly" case seems unimportant for
+      -- those, since there doesn't seem to be a corruption concern.
+      Foreign.ForeignPtr.newForeignPtr pcap_dump_close_ptr ptr
 
 foreign import ccall unsafe pcap_dump_open
     :: Ptr PcapTag -> CString -> IO (Ptr PcapDumpTag)
-foreign import ccall unsafe pcap_dump_close
-    :: Ptr PcapDumpTag -> IO ()
+foreign import ccall unsafe "&pcap_dump_close" pcap_dump_close_ptr
+    :: FunPtr (Ptr PcapDumpTag -> IO ())
 
 --
 -- Set the filter

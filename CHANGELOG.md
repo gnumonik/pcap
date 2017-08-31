@@ -46,6 +46,9 @@ to create a new changelog section for development of the next release.
 - Fixed the documentation for `Network.Pcap.Base.loop`,
   `Network.Pcap.loop`, and `Network.Pcap.loopBS`. They don't actually
   return the number of packets read.
+- Fixed corruption of dump files when killing program with `Ctrl-C`,
+  by changing `Network.Pcap.Base.openDump` to use a `ForeignPtr` C
+  finalizer that's guaranteed to run.
 ### Security
 
 ## [0.4.5.2] - 2012-08-29

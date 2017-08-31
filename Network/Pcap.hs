@@ -274,6 +274,8 @@ wrapBS f hdr ptr = do
 -- record contains the number of bytes captured, which can be used to
 -- marshal the data into a list, array, or 'B.ByteString' (using
 -- 'toBS').
+--
+-- See 'loop' for information about breaking a 'dispatch' or 'loop'.
 dispatch :: PcapHandle
          -> Int                 -- ^ number of packets to process
          -> Callback            -- ^ packet processing function
@@ -293,6 +295,13 @@ dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
+--
+-- NOTE: the pcap looping functions ('loop' and 'dispatch'), are not
+-- interruptible! In particular, if you want your program to be
+-- responsive to receiving Ctrl-C when in a pcap loop, then you need
+-- to run the pcap loop in another thread, and compile your program
+-- with @-threaded@. For an example, see the implementation of @dump@
+-- in the @example.hs@ program included in this package.
 loop :: PcapHandle
      -> Int                     -- ^ number of packets to read (-1 and 0 mean loop forever)
      -> Callback                -- ^ packet processing function

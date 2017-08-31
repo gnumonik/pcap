@@ -51,5 +51,5 @@ executable pcap-example
     buildable: False
   hs-source-dirs: examples
   main-is: example.hs
-  build-depends: base, pcap, bytestring
-  ghc-options: -Wall
+  build-depends: base, pcap, bytestring, async
+  ghc-options: -Wall -threaded
