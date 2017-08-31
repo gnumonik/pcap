@@ -94,6 +94,7 @@ module Network.Pcap.Base
     -- * Packet processing
     , dispatch                  -- :: Ptr PcapTag -> Int -> Callback -> IO Int
     , loop                      -- :: Ptr PcapTag -> Int -> Callback -> IO Int
+    , breakLoop
     , next                      -- :: Ptr PcapTag -> IO (PktHdr, Ptr Word8)
     , dump                      -- :: Ptr PcapDumpTag -> Ptr PktHdr -> Ptr Word8 -> IO ()
 
@@ -607,6 +608,7 @@ exportCallback f = exportCCallback $ \_user chdr ptr -> do
 -- record contains the number of bytes captured, which can be used to
 -- marshal the data into a list or array.
 --
+-- The dispatch loop can be terminated early with 'breakLoop'.
 dispatch :: Ptr PcapTag -- ^ packet capture descriptor
          -> Int         -- ^ number of packets to process
          -> Callback    -- ^ packet processing function
@@ -626,10 +628,8 @@ dispatch hdl count f = do
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
 --
--- This function can in theory return -2 if terminated by
--- @pcap_breakloop@ before any packets were processed. However, we
--- don't expose the breakloop API, so this function should always
--- return 0, since we die on errors.
+-- This function can return -2 if terminated by 'breakLoop' before any
+-- packets were processed.
 loop :: Ptr PcapTag -- ^ packet capture descriptor
      -> Int         -- ^ number of packet to read
      -> Callback    -- ^ packet processing function
@@ -641,6 +641,16 @@ loop hdl count f = do
     freeHaskellFunPtr handler
 
     fromIntegral `fmap` throwPcapIf hdl (== -1) result
+
+-- | Set a flag that forces 'dispatch' and 'loop' to return. They will
+-- return the number of packets that have been processed so far, or -2
+-- if no packets have been processed so far.
+--
+-- See @man pcap_breakloop@ for documentation on signals and
+-- multithreading as they relate to 'breakLoop'.
+breakLoop :: Ptr PcapTag -- ^ packet capture descriptor
+          -> IO ()
+breakLoop ptr = pcap_breakloop ptr
 
 -- | Read the next packet (equivalent to calling 'dispatch' with a
 -- count of 1).
@@ -671,6 +681,8 @@ foreign import ccall pcap_dispatch
         :: Ptr PcapTag -> CInt -> FunPtr CCallback -> Ptr Word8 -> IO CInt
 foreign import ccall pcap_loop
         :: Ptr PcapTag -> CInt -> FunPtr CCallback -> Ptr Word8 -> IO CInt
+foreign import ccall pcap_breakloop
+        :: Ptr PcapTag -> IO ()
 foreign import ccall pcap_next
         :: Ptr PcapTag -> Ptr PktHdr -> IO (Ptr Word8)
 foreign import ccall pcap_dump

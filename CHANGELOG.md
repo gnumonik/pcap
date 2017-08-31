@@ -22,13 +22,16 @@ to create a new changelog section for development of the next release.
 ## [Unreleased]
 ### Added
 - This changelog!
-- A `Storable` instance for `PktHdr` so that `dump` and `dumpBS` could
+- Added `Storable` instance for `PktHdr` so that `dump` and `dumpBS` could
   be made usable.
-- A not-built-by-default executable `pcap-example` to the
+- Added not-built-by-default executable `pcap-example` to the
   `pcap.cabal`, with source in `examples/example.hs`. This is expanded
   version of the old example in `test.hs`, which I renamed and moved
   into the `examples` directory to avoid Cabal trying to rebuild the
   `Network.Pcap` modules when compiling the example.
+- Added `Network.Pcap.breakLoop` and `Network.Pcap.Base.breakLoop`,
+  exposing the `pcap_breakloop` API for terminating `pcap_loop` and
+  `pcap_dispatch` early.
 ### Changed
 - Changed `Network.Pcap.dump` and `Network.Pcap.dumpBS` to take a
   `PktHdr` instead of a `Ptr PktHdr`. This changes their types to

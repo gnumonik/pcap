@@ -25,11 +25,15 @@ related files first. For example:
 # Examples
 
 See `examples/example.hs` for an example of live capturing, dumping
-captured packets, and reading dumped captures from disk. You can build
-this example by enabling the `build-the-examples` flag. For example:
+captured packets, reading dumped captures from disk, handling Ctrl-C,
+and breaking pcap loops. You can build this example by enabling the
+`build-the-examples` flag. For example:
 
     cabal install -f build-the-examples
 
+Or:
+
+    stack install --flag pcap:build-the-examples pcap
 
 # Get involved!
 

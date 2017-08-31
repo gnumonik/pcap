@@ -79,6 +79,7 @@ module Network.Pcap
     -- * Packet processing
     , dispatch                  -- :: PcapHandle -> Int -> Callback -> IO Int
     , loop                      -- :: PcapHandle -> Int -> Callback -> IO ()
+    , breakLoop
     , next                      -- :: PcapHandle -> IO (PktHdr, Ptr Word8)
     , dump                      -- :: DumpHandle -> Callback
 
@@ -300,8 +301,16 @@ dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 -- interruptible! In particular, if you want your program to be
 -- responsive to receiving Ctrl-C when in a pcap loop, then you need
 -- to run the pcap loop in another thread, and compile your program
--- with @-threaded@. For an example, see the implementation of @dump@
--- in the @example.hs@ program included in this package.
+-- with @-threaded@. For example, using the @async@ library's @async@
+-- and @wait@ functions, you can make your program responsive to
+-- Ctrl-C by running 'loop' like this:
+--
+-- > async (loop pch count callback) >>= wait
+--
+-- For a complete example, see the implementation of @capture@ in the
+-- @example.hs@ program included in this package.
+--
+-- If you want to terminate a 'loop' early, use 'breakLoop'.
 loop :: PcapHandle
      -> Int                     -- ^ number of packets to read (-1 and 0 mean loop forever)
      -> Callback                -- ^ packet processing function
@@ -320,6 +329,16 @@ loopBS :: PcapHandle
 loopBS pch count f = do
     _ <- withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
     return ()
+
+-- | Set a flag that forces 'dispatch' and 'loop' to return. They will
+-- return the number of packets that have been processed so far, or -2
+-- if no packets have been processed so far.
+--
+-- See @man pcap_breakloop@ for documentation on signals and
+-- multithreading as they relate to 'breakLoop'.
+breakLoop :: PcapHandle
+          -> IO ()
+breakLoop pch = withPcap pch P.breakLoop
 
 -- | Send a raw packet through the network interface.
 sendPacket :: PcapHandle
