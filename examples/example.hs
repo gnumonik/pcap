@@ -144,7 +144,7 @@ capture opts ph numPktsToRead callback = do
             let microSecs = secs * 1000000
             C.threadDelay microSecs
             P.breakLoop ph
-    C.wait a
+    void $ C.wait a
 
 -- | Print information about a packet.
 printIt :: P.Callback

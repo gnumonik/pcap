@@ -78,14 +78,14 @@ module Network.Pcap
 
     -- * Packet processing
     , dispatch                  -- :: PcapHandle -> Int -> Callback -> IO Int
-    , loop                      -- :: PcapHandle -> Int -> Callback -> IO ()
+    , loop                      -- :: PcapHandle -> Int -> Callback -> IO Int
     , breakLoop
     , next                      -- :: PcapHandle -> IO (PktHdr, Ptr Word8)
     , dump                      -- :: DumpHandle -> Callback
 
     -- ** 'B.ByteString' variants
     , dispatchBS                -- :: PcapHandle -> Int -> CallbackBS -> IO Int
-    , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO ()
+    , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO Int
     , nextBS                    -- :: PcapHandle -> IO (PktHdr, B.ByteStringa)
     , dumpBS                    -- :: DumpHandle -> CallbackBS
 
@@ -297,6 +297,12 @@ dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
 --
+-- If you want to terminate a 'loop' early, use 'breakLoop'.
+--
+-- See 'P.loop' for a discussion of the return value. It can be safely
+-- ignored, since we handle errors (when the underlying @pcap_loop@
+-- returns -1) by raising a Haskell exception.
+--
 -- NOTE: the pcap looping functions ('loop' and 'dispatch'), are not
 -- interruptible! In particular, if you want your program to be
 -- responsive to receiving Ctrl-C when in a pcap loop, then you need
@@ -309,26 +315,20 @@ dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 --
 -- For a complete example, see the implementation of @capture@ in the
 -- @example.hs@ program included in this package.
---
--- If you want to terminate a 'loop' early, use 'breakLoop'.
 loop :: PcapHandle
      -> Int                     -- ^ number of packets to read (-1 and 0 mean loop forever)
      -> Callback                -- ^ packet processing function
-     -> IO ()
+     -> IO Int
 loop pch count f = do
-    -- This return code is always zero for our current API. See
-    -- 'P.loop'.
-    _ <- withPcap pch $ \hdl -> P.loop hdl count f
-    return ()
+    withPcap pch $ \hdl -> P.loop hdl count f
 
 -- | Variant of 'loop' for use with 'B.ByteString'.
 loopBS :: PcapHandle
        -> Int                   -- ^ number of packets to read (-1 and 0 mean loop forever)
        -> CallbackBS            -- ^ packet processing function
-       -> IO ()
+       -> IO Int
 loopBS pch count f = do
-    _ <- withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
-    return ()
+    withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
 
 -- | Set a flag that forces 'dispatch' and 'loop' to return. They will
 -- return the number of packets that have been processed so far, or -2

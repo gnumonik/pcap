@@ -38,9 +38,6 @@ to create a new changelog section for development of the next release.
   `Callback` and `CallbackBS`, respectively, so they can now be used
   with the various packet capture functions. Before there was no easy
   way to use them, given the lack of a `Storable PktHdr` instance.
-- Changed the types of `Network.Pcap.loop`, and `Network.Pcap.loopBS`
-  to return `()` instead of `Int`, since their return codes will
-  always be zero.
 ### Deprecated
 ### Removed
 - Stopped exporting `toPktHdr` because that interface is now exposed

@@ -623,13 +623,22 @@ dispatch hdl count f = do
 
 -- | Similar to 'dispatch', but loop until the number of packets
 -- specified by the second argument are read. A negative value loops
--- forever.
+-- forever. A value of 0 also loops forever on modern versions of
+-- pcap, but was undefined for older versions of pcap, according to
+-- @man pcap_loop@.
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
 --
--- This function can return -2 if terminated by 'breakLoop' before any
--- packets were processed.
+-- According to @map pcap_loop@, this function can return -2 if
+-- terminated by 'breakLoop' before any packets were processed, and 0
+-- if the requested number of packets were processsed (or there are no
+-- more packets in the dumpfile, when reading from a
+-- dumpfile). According to @man pcap_breakloop@, if terminated by
+-- 'breakLoop' after /some/ packets, but fewer than the number
+-- requested have been read, then it returns the number of packets
+-- read. If the underlying @pcap_loop@ call returns -1 to signal an
+-- error, then we raise a Haskell exception.
 loop :: Ptr PcapTag -- ^ packet capture descriptor
      -> Int         -- ^ number of packet to read
      -> Callback    -- ^ packet processing function
