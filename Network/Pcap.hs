@@ -33,7 +33,7 @@
 --
 ------------------------------------------------------------------------------
 
-module Network.Pcap
+module Network.Pcap 
     (
       -- * Types
       PcapHandle
@@ -55,6 +55,8 @@ module Network.Pcap
     , openLive                  -- :: String -> Int -> Bool -> Int -> IO Pcap
     , openDead                  -- :: Int -> Int -> IO Pcap
     , openDump                  -- :: PcapHandle -> FilePath -> IO Pdump
+    , pcapCreate                -- :: String -> IO PcapHandle
+    , pcapActivate              -- :: PcapHandle -> IO ()
 
     -- * Filter handling
     , setFilter                 -- :: PcapHandle -> String -> Bool -> Word32 -> IO ()
@@ -69,7 +71,10 @@ module Network.Pcap
 
     , setNonBlock               -- :: PcapHandle -> Bool -> IO ()
     , getNonBlock               -- :: PcapHandle -> IO Bool
-    , setDirection
+    , setDirection              -- :: PcapHandle -> Direction -> IO ()
+    , setImmediateMode          -- :: PcapHandle -> Bool -> IO ()
+    , setSnapLen                -- :: PcapHandle -> Int -> IO ()
+    , setPromisc                -- :: PcapHandle -> Bool -> IO ()
 
     -- * Link layer utilities
     , datalink                  -- :: PcapHandle -> IO Link
@@ -79,15 +84,14 @@ module Network.Pcap
     -- * Packet processing
     , dispatch                  -- :: PcapHandle -> Int -> Callback -> IO Int
     , loop                      -- :: PcapHandle -> Int -> Callback -> IO Int
-    , breakLoop
     , next                      -- :: PcapHandle -> IO (PktHdr, Ptr Word8)
-    , dump                      -- :: DumpHandle -> Callback
+    , dump                      -- :: Ptr PcapDumpTag -> Ptr PktHdr -> Ptr Word8 -> IO ()
 
     -- ** 'B.ByteString' variants
     , dispatchBS                -- :: PcapHandle -> Int -> CallbackBS -> IO Int
     , loopBS                    -- :: PcapHandle -> Int -> CallbackBS -> IO Int
     , nextBS                    -- :: PcapHandle -> IO (PktHdr, B.ByteStringa)
-    , dumpBS                    -- :: DumpHandle -> CallbackBS
+    , dumpBS                    -- :: Ptr PcapDumpTag -> Ptr PktHdr -> B.ByteString -> IO ()
 
     -- * Sending packets
     , sendPacket
@@ -105,17 +109,16 @@ module Network.Pcap
     , snapshotLen               -- :: PcapHandle -> IO Int
     ) where
 
-#ifdef BYTESTRING_IN_BASE
-import qualified Data.ByteString.Base as B
-import qualified Data.ByteString.Base as BU
-#else
+-- #ifdef BYTESTRING_IN_BASE
+--import qualified Data.ByteString.Base as B
+--import qualified Data.ByteString.Base as BU
+-- #else
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Unsafe as BU
-#endif
+-- #endif
 import Data.Int (Int64)
 import Data.Time.Clock (DiffTime, picosecondsToDiffTime)
 import Data.Word (Word8, Word32)
-import Foreign.Marshal.Utils (with)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import qualified Network.Pcap.Base as P
@@ -170,6 +173,21 @@ openLive name snaplen promisc timeout =
     let timeout' | timeout <= 0 = 0
                  | otherwise = fromIntegral (timeout `div` 1000)
     in PcapHandle `fmap` P.openLive name snaplen promisc timeout'
+
+pcapCreate :: String -> IO PcapHandle
+pcapCreate name = PcapHandle <$> P.pcapCreate name 
+
+setImmediateMode :: PcapHandle -> Bool -> IO ()
+setImmediateMode pch immediate = withPcap pch $ \hdl -> P.setImmediateMode hdl immediate 
+
+pcapActivate :: PcapHandle -> IO ()
+pcapActivate pch = withPcap pch $ \hdl -> P.pcapActivate hdl 
+
+setPromisc :: PcapHandle -> Bool -> IO ()
+setPromisc pch promisc = withPcap pch $ \hdl -> P.pcapSetPromisc hdl promisc 
+
+setSnapLen :: PcapHandle -> Int -> IO ()
+setSnapLen pch snaplen = withPcap pch $ \hdl -> P.setSnapLen hdl snaplen 
 
 -- | 'openDead' is used to get a 'PcapHandle' without opening a file
 -- or device. It is typically used to test packet filter compilation
@@ -228,6 +246,8 @@ setNonBlock :: PcapHandle       -- ^ must have been obtained from 'openLive'
             -> IO ()
 setNonBlock pch block = withPcap pch $ \hdl -> P.setNonBlock hdl block
 
+
+
 -- | Return the blocking status of the 'PcapHandle'. 'True' indicates
 -- that the handle is non-blocking. Handles referring to dump files
 -- opened by 'openDump' always return 'False'.
@@ -266,7 +286,7 @@ wrapBS f hdr ptr = do
 -- | Collect and process packets.
 --
 -- The count is the maximum number of packets to process before
--- returning.  A count of 0 or -1 means process all of the packets received
+-- returning.  A count of -1 means process all of the packets received
 -- in one buffer (if a live capture) or all of the packets in a dump
 -- file (if offline).
 --
@@ -276,7 +296,6 @@ wrapBS f hdr ptr = do
 -- marshal the data into a list, array, or 'B.ByteString' (using
 -- 'toBS').
 --
--- See 'loop' for information about breaking a 'dispatch' or 'loop'.
 dispatch :: PcapHandle
          -> Int                 -- ^ number of packets to process
          -> Callback            -- ^ packet processing function
@@ -291,54 +310,23 @@ dispatchBS :: PcapHandle
 dispatchBS pch count f = withPcap pch $ \hdl -> P.dispatch hdl count (wrapBS f)
 
 -- | Similar to 'dispatch', but loop until the number of packets
--- specified by the second argument are read. A count of 0 or -1 means
--- loop forever.
+-- specified by the second argument are read. A negative value loops
+-- forever.
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
---
--- If you want to terminate a 'loop' early, use 'breakLoop'.
---
--- See 'P.loop' for a discussion of the return value. It can be safely
--- ignored, since we handle errors (when the underlying @pcap_loop@
--- returns -1) by raising a Haskell exception.
---
--- NOTE: the pcap looping functions ('loop' and 'dispatch'), are not
--- interruptible! In particular, if you want your program to be
--- responsive to receiving Ctrl-C when in a pcap loop, then you need
--- to run the pcap loop in another thread, and compile your program
--- with @-threaded@. For example, using the @async@ library's @async@
--- and @wait@ functions, you can make your program responsive to
--- Ctrl-C by running 'loop' like this:
---
--- > async (loop pch count callback) >>= wait
---
--- For a complete example, see the implementation of @capture@ in the
--- @example.hs@ program included in this package.
 loop :: PcapHandle
-     -> Int                     -- ^ number of packets to read (-1 and 0 mean loop forever)
+     -> Int                     -- ^ number of packets to read (-1 == loop forever)
      -> Callback                -- ^ packet processing function
-     -> IO Int
-loop pch count f = do
-    withPcap pch $ \hdl -> P.loop hdl count f
+     -> IO Int                  -- ^ number of packets read
+loop pch count f = withPcap pch $ \hdl -> P.loop hdl count f
 
 -- | Variant of 'loop' for use with 'B.ByteString'.
 loopBS :: PcapHandle
-       -> Int                   -- ^ number of packets to read (-1 and 0 mean loop forever)
+       -> Int                   -- ^ number of packets to read (-1 == loop forever)
        -> CallbackBS            -- ^ packet processing function
-       -> IO Int
-loopBS pch count f = do
-    withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
-
--- | Set a flag that forces 'dispatch' and 'loop' to return. They will
--- return the number of packets that have been processed so far, or -2
--- if no packets have been processed so far.
---
--- See @man pcap_breakloop@ for documentation on signals and
--- multithreading as they relate to 'breakLoop'.
-breakLoop :: PcapHandle
-          -> IO ()
-breakLoop pch = withPcap pch P.breakLoop
+       -> IO Int                -- ^ number of packets read
+loopBS pch count f = withPcap pch $ \hdl -> P.loop hdl count (wrapBS f)
 
 -- | Send a raw packet through the network interface.
 sendPacket :: PcapHandle
@@ -374,14 +362,19 @@ nextBS pch = withPcap pch P.next >>= toBS
 -- | Write the packet data given by the second and third arguments to
 -- a dump file opened by 'openDead'. 'dump' is designed so it can be
 -- easily used as a default callback function by 'dispatch' or 'loop'.
-dump :: DumpHandle -> Callback
-dump dh hdr pkt =
-    withDump dh $ \hdl -> with hdr $ \ptr -> P.dump hdl ptr pkt
+dump :: DumpHandle
+     -> Ptr PktHdr              -- ^ packet header record
+     -> Ptr Word8               -- ^ packet data
+     -> IO ()
+dump dh hdr pkt = withDump dh $ \hdl -> P.dump hdl hdr pkt
 
-dumpBS :: DumpHandle -> CallbackBS
+dumpBS :: DumpHandle
+       -> Ptr PktHdr            -- ^ packet header record
+       -> B.ByteString          -- ^ packet data
+       -> IO ()
 dumpBS dh hdr s =
-    withDump dh $ \hdl -> with hdr $ \ptr ->
-        BU.unsafeUseAsCString s $ P.dump hdl ptr . castPtr
+    withDump dh $ \hdl ->
+        BU.unsafeUseAsCString s $ P.dump hdl hdr . castPtr
 
 --
 -- Datalink manipulation

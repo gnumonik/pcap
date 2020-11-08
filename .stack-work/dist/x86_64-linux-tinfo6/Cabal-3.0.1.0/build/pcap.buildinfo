@@ -1,0 +1,3 @@
+ghc-options: -DCALLCONV=ccall
+cc-options: -DCALLCONV=ccall
+extra-libraries: pcap

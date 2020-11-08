@@ -70,6 +70,8 @@ module Network.Pcap.Base
     , openLive                  -- :: String -> Int -> Bool -> Int -> IO Pcap
     , openDead                  -- :: Int    -> Int -> IO Pcap
     , openDump                  -- :: Ptr PcapTag -> FilePath -> IO Pdump
+    , pcapCreate                -- :: String  -> IO (ForeignPtr PcapTag)
+    , pcapActivate              -- :: Ptr PcapTag -> IO ()
 
     -- * Filter handling
     , setFilter                 -- :: Ptr PcapTag -> String -> Bool -> Word32 -> IO ()
@@ -84,8 +86,10 @@ module Network.Pcap.Base
 
     , setNonBlock               -- :: Ptr PcapTag -> Bool -> IO ()
     , getNonBlock               -- :: Ptr PcapTag -> IO Bool
-    , setDirection
-
+    , setDirection              -- :: Ptr PcapTag -> Direction -> IO ()
+    , setImmediateMode          -- :: Ptr PcapTag -> Bool -> IO ()
+    , setSnapLen                -- :: Ptr PcapTag -> Int -> IO ()
+    , pcapSetPromisc            -- :: Ptr PcapTag -> Bool -> IO ()
     -- * Link layer utilities
     , datalink                  -- :: Ptr PcapTag -> IO Link
     , setDatalink               -- :: Ptr PcapTag -> Link -> IO ()
@@ -94,12 +98,14 @@ module Network.Pcap.Base
     -- * Packet processing
     , dispatch                  -- :: Ptr PcapTag -> Int -> Callback -> IO Int
     , loop                      -- :: Ptr PcapTag -> Int -> Callback -> IO Int
-    , breakLoop
     , next                      -- :: Ptr PcapTag -> IO (PktHdr, Ptr Word8)
     , dump                      -- :: Ptr PcapDumpTag -> Ptr PktHdr -> Ptr Word8 -> IO ()
 
     -- * Sending packets
     , sendPacket
+
+    -- * Conversion
+    , toPktHdr
 
     -- * Miscellaneous
     , statistics                -- :: Ptr PcapTag -> IO Statistics
@@ -109,7 +115,7 @@ module Network.Pcap.Base
     ) where
 
 import Control.Monad (when)
-import Data.Maybe (isNothing, fromJust )
+import Data.Maybe (isNothing, fromJust ) 
 import Data.ByteString ()
 #ifdef BYTESTRING_IN_BASE
 import qualified Data.ByteString.Base as B
@@ -122,7 +128,6 @@ import Foreign.C.String (CString, peekCString, withCString)
 import Foreign.C.Types (CInt(..), CUInt, CChar, CUChar, CLong)
 import Foreign.Concurrent (newForeignPtr)
 import Foreign.ForeignPtr (ForeignPtr)
-import qualified Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca, allocaBytes, free)
 import Foreign.Marshal.Array (allocaArray, peekArray)
 import Foreign.Marshal.Utils (fromBool, toBool)
@@ -131,13 +136,13 @@ import Network.Socket (Family(..), unpackFamily)
 
 #include <pcap.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
+#include <sys/socket.h> 
 
 newtype BpfProgramTag = BpfProgramTag ()
 
 -- | Compiled Berkeley Packet Filter program.
 type BpfProgram = ForeignPtr BpfProgramTag
-
+ 
 newtype PcapTag = PcapTag ()
 
 -- | Packet capture descriptor.
@@ -146,10 +151,6 @@ newtype PcapDumpTag = PcapDumpTag ()
 -- | Dump file descriptor.
 type Pdump = ForeignPtr PcapDumpTag
 
--- | Packet header.
---
--- There is a @'Storeable' 'PktHdr'@ instance for converting between
--- @'Ptr' PktHdr@ and @PktHdr@.
 data PktHdr = PktHdr {
       hdrSeconds :: {-# UNPACK #-} !Word32       -- ^ timestamp (seconds)
     , hdrUseconds :: {-# UNPACK #-} !Word32      -- ^ timestamp (microseconds)
@@ -258,6 +259,12 @@ openDead link snaplen = do
         ioError $ userError "Can't open dead pcap device"
     newForeignPtr ptr (pcap_close ptr)
 
+pcapCreate :: String -- ^ device name
+           -> IO (ForeignPtr PcapTag)
+pcapCreate name = withCString name $ \namePtr -> do
+    ptr <- withErrBuf (==nullPtr) (pcap_create namePtr)
+    newForeignPtr ptr (pcap_close ptr)
+
 foreign import ccall unsafe pcap_open_offline
     :: CString   -> ErrBuf -> IO (Ptr PcapTag)
 foreign import ccall unsafe pcap_close
@@ -266,6 +273,8 @@ foreign import ccall unsafe pcap_open_live
     :: CString -> CInt -> CInt -> CInt -> ErrBuf -> IO (Ptr PcapTag)
 foreign import ccall unsafe pcap_open_dead
     :: CInt -> CInt -> IO (Ptr PcapTag)
+foreign import ccall unsafe pcap_create
+    :: CString -> ErrBuf -> IO (Ptr PcapTag)
 
 --
 -- Open a dump device
@@ -281,24 +290,12 @@ openDump :: Ptr PcapTag -- ^ packet capture descriptor
 openDump hdl name =
     withCString name $ \namePtr -> do
       ptr <- pcap_dump_open hdl namePtr >>= throwPcapIf hdl (== nullPtr)
-      -- Using 'Foreign.Concurrent.newForeignPtr' isn't sufficient
-      -- here, since its (Haskell) finalizer is not guaranteed to
-      -- run. Rather, we use 'Foreign.ForeignPtr.newForeignPtr', since
-      -- its (C) finalizer is guaranteed to run. Previously, when
-      -- using 'Foreign.Concurrent.newForeignPtr' and killing the
-      -- program with Ctrl-C, we sometimes got corrupted dump files.
-      --
-      -- Perhaps we should also change other finalizers -- 'openDead',
-      -- 'openLive', 'openOffline', 'compileFilter' -- to use
-      -- 'Foreign.ForeignPtr.newForeignPtr'? But handling the "whole
-      -- program terminated unexpectedly" case seems unimportant for
-      -- those, since there doesn't seem to be a corruption concern.
-      Foreign.ForeignPtr.newForeignPtr pcap_dump_close_ptr ptr
+      newForeignPtr ptr (pcap_dump_close ptr)
 
 foreign import ccall unsafe pcap_dump_open
     :: Ptr PcapTag -> CString -> IO (Ptr PcapDumpTag)
-foreign import ccall unsafe "&pcap_dump_close" pcap_dump_close_ptr
-    :: FunPtr (Ptr PcapDumpTag -> IO ())
+foreign import ccall unsafe pcap_dump_close
+    :: Ptr PcapDumpTag -> IO ()
 
 --
 -- Set the filter
@@ -513,13 +510,36 @@ packDirection In = (#const PCAP_D_IN)
 packDirection Out = (#const PCAP_D_OUT)
 packDirection InOut = (#const PCAP_D_INOUT)
 
+setImmediateMode :: Ptr PcapTag -> Bool -> IO ()
+setImmediateMode hdl immediate =
+    pcap_set_immediate_mode hdl (fromBool immediate) >>= throwPcapIf_ hdl (== -1)
+
+setSnapLen :: Ptr PcapTag -> Int -> IO ()
+setSnapLen hdl snaplen = 
+    pcap_set_snaplen hdl (fromIntegral snaplen) >>= throwPcapIf_ hdl (== -1)
+
+pcapActivate :: Ptr PcapTag -> IO ()
+pcapActivate hdl = 
+    pcap_activate hdl >>= throwPcapIf_ hdl (== -1)
+    
+pcapSetPromisc :: Ptr PcapTag -> Bool -> IO ()
+pcapSetPromisc hdl promisc =
+    pcap_set_promisc hdl (fromBool promisc) >>= throwPcapIf_ hdl (== -1)
+
 foreign import ccall unsafe pcap_setnonblock
     :: Ptr PcapTag -> CInt -> ErrBuf -> IO CInt
 foreign import ccall unsafe pcap_getnonblock
     :: Ptr PcapTag -> ErrBuf -> IO CInt
 foreign import ccall unsafe pcap_setdirection
     :: Ptr PcapTag -> CInt -> IO CInt
-
+foreign import ccall unsafe pcap_set_immediate_mode
+    :: Ptr PcapTag -> CInt -> IO CInt
+foreign import ccall unsafe pcap_set_snaplen
+    :: Ptr PcapTag -> CInt -> IO CInt
+foreign import ccall unsafe pcap_activate
+    :: Ptr PcapTag -> IO CInt
+foreign import ccall unsafe pcap_set_promisc
+    :: Ptr PcapTag -> CInt -> IO CInt
 --
 -- Error handling
 --
@@ -550,7 +570,6 @@ foreign import ccall unsafe pcap_sendpacket
 type Callback  = PktHdr    -> Ptr Word8  -> IO ()
 type CCallback = Ptr Word8 -> Ptr PktHdr -> Ptr Word8 -> IO ()
 
--- | Read, i.e. 'peek', a 'PktHdr' pointer.
 toPktHdr :: Ptr PktHdr -> IO PktHdr
 toPktHdr hdr = do
     let ts = (#ptr struct pcap_pkthdr, ts) hdr
@@ -565,30 +584,6 @@ toPktHdr hdr = do
                   , hdrCaptureLength = fromIntegral (caplen :: CUInt)
                   , hdrWireLength = fromIntegral (len :: CUInt)
                   }
-
--- | Write, i.e. 'poke' a 'PktHdr' pointer.
-fromPktHdr :: Ptr PktHdr -> PktHdr -> IO ()
-fromPktHdr ptr hdr = do
-    let PktHdr s us caplen len = hdr
-    let ts = (#ptr struct pcap_pkthdr, ts) ptr
-
-    (#poke struct timeval, tv_sec) ts (fromIntegral s :: CLong)
-    (#poke struct timeval, tv_usec) ts (fromIntegral us :: CLong)
-    (#poke struct pcap_pkthdr, caplen) ptr (fromIntegral caplen :: CUInt)
-    (#poke struct pcap_pkthdr, len) ptr (fromIntegral len :: CUInt)
-
--- GHC versions before 8 don't include the @#alignment@ operator.
---
--- https://wiki.haskell.org/FFI_cook_book#Working_with_structs
-#if __GLASGOW_HASKELL__ < 800
-#let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
-#endif
-
-instance Storable PktHdr where
-    alignment _ = (#alignment struct pcap_pkthdr)
-    sizeOf _ = (#size struct pcap_pkthdr)
-    peek = toPktHdr
-    poke = fromPktHdr
 
 exportCallback :: Callback -> IO (FunPtr CCallback)
 exportCallback f = exportCCallback $ \_user chdr ptr -> do
@@ -608,7 +603,6 @@ exportCallback f = exportCCallback $ \_user chdr ptr -> do
 -- record contains the number of bytes captured, which can be used to
 -- marshal the data into a list or array.
 --
--- The dispatch loop can be terminated early with 'breakLoop'.
 dispatch :: Ptr PcapTag -- ^ packet capture descriptor
          -> Int         -- ^ number of packets to process
          -> Callback    -- ^ packet processing function
@@ -623,26 +617,14 @@ dispatch hdl count f = do
 
 -- | Similar to 'dispatch', but loop until the number of packets
 -- specified by the second argument are read. A negative value loops
--- forever. A value of 0 also loops forever on modern versions of
--- pcap, but was undefined for older versions of pcap, according to
--- @man pcap_loop@.
+-- forever.
 --
 -- This function does not return when a live read timeout occurs. Use
 -- 'dispatch' instead if you want to specify a timeout.
---
--- According to @map pcap_loop@, this function can return -2 if
--- terminated by 'breakLoop' before any packets were processed, and 0
--- if the requested number of packets were processsed (or there are no
--- more packets in the dumpfile, when reading from a
--- dumpfile). According to @man pcap_breakloop@, if terminated by
--- 'breakLoop' after /some/ packets, but fewer than the number
--- requested have been read, then it returns the number of packets
--- read. If the underlying @pcap_loop@ call returns -1 to signal an
--- error, then we raise a Haskell exception.
 loop :: Ptr PcapTag -- ^ packet capture descriptor
      -> Int         -- ^ number of packet to read
      -> Callback    -- ^ packet processing function
-     -> IO Int      -- ^ zero on success
+     -> IO Int      -- ^ number of packets read
 loop hdl count f = do
     handler <- exportCallback f
     result  <- pcap_loop hdl (fromIntegral count) handler nullPtr
@@ -650,16 +632,6 @@ loop hdl count f = do
     freeHaskellFunPtr handler
 
     fromIntegral `fmap` throwPcapIf hdl (== -1) result
-
--- | Set a flag that forces 'dispatch' and 'loop' to return. They will
--- return the number of packets that have been processed so far, or -2
--- if no packets have been processed so far.
---
--- See @man pcap_breakloop@ for documentation on signals and
--- multithreading as they relate to 'breakLoop'.
-breakLoop :: Ptr PcapTag -- ^ packet capture descriptor
-          -> IO ()
-breakLoop ptr = pcap_breakloop ptr
 
 -- | Read the next packet (equivalent to calling 'dispatch' with a
 -- count of 1).
@@ -673,6 +645,8 @@ next hdl =
         else do
           hdr <- toPktHdr chdr
           return (hdr, ptr)
+
+
 
 -- | Write the packet data given by the second and third arguments to
 -- a dump file opened by 'openDead'. 'dump' is designed so it can be
@@ -690,12 +664,11 @@ foreign import ccall pcap_dispatch
         :: Ptr PcapTag -> CInt -> FunPtr CCallback -> Ptr Word8 -> IO CInt
 foreign import ccall pcap_loop
         :: Ptr PcapTag -> CInt -> FunPtr CCallback -> Ptr Word8 -> IO CInt
-foreign import ccall pcap_breakloop
-        :: Ptr PcapTag -> IO ()
 foreign import ccall pcap_next
         :: Ptr PcapTag -> Ptr PktHdr -> IO (Ptr Word8)
 foreign import ccall pcap_dump
         :: Ptr PcapDumpTag -> Ptr PktHdr -> Ptr Word8 -> IO ()
+
 
 --
 -- Datalink manipulation

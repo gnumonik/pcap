@@ -1,0 +1,26 @@
+/home/gnumonic/Code/Haskell/pcap/pcap.cabal:
+  hash: 262a44ae752583180e4da61ddc6faf7d29f7b005841e82f3f32bd08851801c68
+/home/gnumonic/Code/Haskell/pcap/README.markdown:
+  hash: d2c804fcc985789be9443b51d590ce1b28aaabc86ccc32b40f3fffbd6f24161a
+/home/gnumonic/Code/Haskell/pcap/.stack-work/dist/x86_64-linux-tinfo6/Cabal-3.0.1.0/build/autogen/cabal_macros.h:
+  hash: 7f29eaca0fb20b83722f7b421f35840a0d7d044d51b1b2e375b231ac3ba21f6e
+/home/gnumonic/Code/Haskell/pcap/Network/Pcap/Base.hsc:
+  hash: 83e2e4d7b784a801ffc486321719e8efc278cf1501cf97af8994e59f0bb96065
+/usr/include/stdc-predef.h:
+  hash: 64fdf694f7b3d51ec6c45c06dcb71ebbe9455742d3ea673012016668853d3bff
+/home/gnumonic/Code/Haskell/pcap/examples/example.hs:
+  hash: 434715dfb5f9ae8ebcb67f9cf6f09cf89daaad809d8b1a59443d19ae2af50d42
+/home/gnumonic/Code/Haskell/pcap/include/pcapconfig.h.in:
+  hash: 7eec415cdfb45c0e934fb6f104b7c4daa643f632e237b8b96f6eb3c0206aa7d6
+/home/gnumonic/Code/Haskell/pcap/configure.ac:
+  hash: 4ffd5c41bcab8e24f5bc24b74b2e14dea5725beb1e7b1e14fd81c3dd3712f75f
+/home/gnumonic/Code/Haskell/pcap/Network/Pcap.hs:
+  hash: 3f3dc4dfdff956eebbe5e3792307c71af3cf7054e32b7e9a20b3cee18e1e29d8
+/home/gnumonic/.stack/programs/x86_64-linux/ghc-tinfo6-8.8.4/lib/ghc-8.8.4/include/ghcversion.h:
+  hash: 297e8571427d670d413977834f5cdfc77cb89051d2f5b8302303c442346d15d0
+/home/gnumonic/Code/Haskell/pcap/pcap.buildinfo.in:
+  hash: ec7ffa9767010518f33b49bbfcaedbabec5a6ec7eff5e663ec88df490db1bf76
+/home/gnumonic/Code/Haskell/pcap/CHANGELOG.md:
+  hash: 1067ee942d52a760e03c3a34e8953a05a6db3c0ed5414ebce807d37d2d020747
+/home/gnumonic/Code/Haskell/pcap/configure:
+  hash: 8f7a8e3b63b3085e28e173c1a344c7e865f3bcf5601b70c5f37feb566c24ffdf
